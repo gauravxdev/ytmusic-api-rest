@@ -1,14 +1,23 @@
 import os
 import logging
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from ytmusicapi import YTMusic
 import time
 
 app = Flask(__name__)
 
+# Enable CORS for all routes
+CORS(app)
+
 # Configure logging for production
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Request logging middleware
+@app.before_request
+def log_request_info():
+    logger.info(f'{request.method} {request.url} - {request.remote_addr}')
 
 # Public instance: default region/location; you may optionally create new instance per-request with region/lang
 yt_public = YTMusic(language='en', location='IN')
@@ -87,6 +96,15 @@ def _dedupe(lst):
         out.append(x)
     return out
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for load balancers and monitoring"""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": int(time.time()),
+        "service": "yt-music-api"
+    })
+
 @app.route('/api/homefeed', methods=['GET'])
 def api_homefeed():
     region = request.args.get('region', 'IN')
@@ -95,7 +113,7 @@ def api_homefeed():
     key = f"homefeed:{region}:{lang}:{limit}"
     cached = _cache_get(key)
     if cached:
-        return jsonify({"status":"success","data":cached})
+        return jsonify({"status":"success","data":{"feed":cached}})
     yt = YTMusic(language=lang, location=region)
     sections = yt.get_home(limit=limit)
     feed = []
